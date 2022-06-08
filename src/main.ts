@@ -46,7 +46,7 @@ const createVueIcon = (icon: Icon) => {
     })
 
     /**
-     * replace color in icons so we can color them via css classes
+     * replace color in icons, so we can color them via css classes
      */
     const regex = /(fill|stroke|color)="([^"]*)"/gm;
     let m;
