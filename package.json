@@ -20,6 +20,8 @@
     "typescript": "^4.7.3"
   },
   "dependencies": {
+    "@babel/types": "^7.18.4",
+    "@vue/compiler-dom": "^3.2.37",
     "svgo": "^2.8"
   }
 }
