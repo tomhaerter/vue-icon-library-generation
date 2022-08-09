@@ -74,7 +74,7 @@ class LibraryGeneration {
 
           icons.push({
             name: `${prefix}${file.replace('.svg', '')
-              .replace('prefix', '')
+              .replace(prefix.toLowerCase(), '')
               .split('-')
               .map((s) => toTitle(s))
               .join('')}`,

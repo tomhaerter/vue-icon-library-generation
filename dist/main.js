@@ -57,13 +57,17 @@ class LibraryGeneration {
                 exports += `${icon.name}\n,`;
                 exportTypes += `export { default as ${icon.name} } from './${icon.name}'\n`;
                 // eslint-disable-next-line no-await-in-loop
-                fs.writeFile(`${outDir}/${icon.name}.js`, yield this.createVueIcon(icon), () => { });
+                fs.writeFile(`${outDir}/${icon.name}.js`, yield this.createVueIcon(icon), () => {
+                });
                 const type = `import type { FunctionalComponent, HTMLAttributes, VNodeProps } from 'vue';\ndeclare const ${icon.name}: FunctionalComponent<HTMLAttributes & VNodeProps>;\nexport default ${icon.name};\n`;
-                fs.writeFile(`${outDir}/${icon.name}.d.ts`, type, () => { });
+                fs.writeFile(`${outDir}/${icon.name}.d.ts`, type, () => {
+                });
             }
             const content = `${imports} \n  export {${exports}}`;
-            fs.writeFile(`${outDir}/index.js`, content, () => { });
-            fs.writeFile(`${outDir}/index.d.ts`, exportTypes, () => { });
+            fs.writeFile(`${outDir}/index.js`, content, () => {
+            });
+            fs.writeFile(`${outDir}/index.d.ts`, exportTypes, () => {
+            });
         });
     }
     getAllIcons(dir) {
@@ -73,7 +77,8 @@ class LibraryGeneration {
             fs.readdir(directoryPath, (err, files) => __awaiter(this, void 0, void 0, function* () {
                 // eslint-disable-next-line no-restricted-syntax
                 for (const file of files) {
-                    if (fs.statSync(`${directoryPath}/${file}`).isDirectory()) {
+                    if (fs.statSync(`${directoryPath}/${file}`)
+                        .isDirectory()) {
                         // eslint-disable-next-line no-await-in-loop
                         icons = [...icons, ...(yield this.getAllIcons(`${dir}/${file}`))];
                         // eslint-disable-next-line no-continue
@@ -82,9 +87,16 @@ class LibraryGeneration {
                     // eslint-disable-next-line no-continue
                     if (!file.includes('.svg'))
                         continue;
-                    const prefix = dir.replace(this.path, '').split('/').map((s) => toTitle(s)).join('');
+                    const prefix = dir.replace(this.path, '')
+                        .split('/')
+                        .map((s) => toTitle(s))
+                        .join('');
                     icons.push({
-                        name: `${prefix}${file.replace('.svg', '').split('-').map((s) => toTitle(s)).join('')}`,
+                        name: `${prefix}${file.replace('.svg', '')
+                            .replace(prefix.toLowerCase(), '')
+                            .split('-')
+                            .map((s) => toTitle(s))
+                            .join('')}`,
                         path: `${dir}/${file}`,
                     });
                 }
