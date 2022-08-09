@@ -1,164 +1,190 @@
-import * as path from "path";
-import * as fs from "fs";
-import {readFileSync} from "fs";
-import {optimize} from 'svgo'
-import {compile} from "@vue/compiler-dom";
+import * as path from 'path';
+import * as fs from 'graceful-fs';
+import { optimize, OptimizedSvg } from 'svgo';
+import { compile } from '@vue/compiler-dom';
 
 function toTitle(str: string) {
-    return str.replace(/(^|\s)\S/g, function (t) {
-        return t.toUpperCase()
-    });
+  return str.replace(/(^|\s)\S/g, (t) => t.toUpperCase());
 }
 
 interface Icon {
-    path: string
-    name: string
+  path: string;
+  name: string;
 }
 
 class LibraryGeneration {
-    private readonly path
-    private readonly name
+  private readonly path;
 
-    constructor(path = '../svgs', name: string) {
-        this.path = path
-        this.name = name
+  private readonly name;
+
+  constructor(_path = '../svgs', _name: string = '') {
+    this.path = _path;
+    this.name = _name;
+  }
+
+  async create() {
+    const outDir = path.join(__dirname, `../out/${this.name}`);
+    const icons = await this.getAllIcons(this.path);
+
+    let imports = '';
+    let exports = '';
+    let exportTypes = '';
+    // eslint-disable-next-line no-restricted-syntax
+    for (const icon of icons) {
+      imports += `import ${icon.name} from './${icon.name}.js'\n`;
+      exports += `${icon.name}\n,`;
+      exportTypes += `export { default as ${icon.name} } from './${icon.name}'\n`;
+      // eslint-disable-next-line no-await-in-loop
+      fs.writeFile(`${outDir}/${icon.name}.js`, await this.createVueIcon(icon), () => {
+      });
+
+      const type = `import type { FunctionalComponent, HTMLAttributes, VNodeProps } from 'vue';\ndeclare const ${icon.name}: FunctionalComponent<HTMLAttributes & VNodeProps>;\nexport default ${icon.name};\n`;
+      fs.writeFile(`${outDir}/${icon.name}.d.ts`, type, () => {
+      });
     }
 
-    create() {
-        const outDir = path.join(__dirname, `../out/${this.name}`)
-        const icons = this.getAllIcons(this.path);
+    const content = `${imports} \n  export {${exports}}`;
+    fs.writeFile(`${outDir}/index.js`, content, () => {
+    });
+    fs.writeFile(`${outDir}/index.d.ts`, exportTypes, () => {
+    });
+  }
 
-        let imports = ``;
-        let exports = ``
-        let exportTypes = ``
-        icons.forEach((icon) => {
-            imports += `import ${icon.name} from './${icon.name}.js'\n`
-            exports += `${icon.name}\n,`
-            exportTypes += `export { default as ${icon.name} } from './${icon.name}'\n`
-            fs.writeFile(outDir + `/${icon.name}.js`, this.createVueIcon(icon), err => {})
+  getAllIcons(dir): Promise<Icon[]> {
+    return new Promise((resolve) => {
+      const directoryPath = path.join(__dirname, `${dir}`);
+      let icons = [] as Icon[];
+      fs.readdir(directoryPath, async (err, files) => {
+        // eslint-disable-next-line no-restricted-syntax
+        for (const file of files) {
+          if (fs.statSync(`${directoryPath}/${file}`)
+            .isDirectory()) {
+            // eslint-disable-next-line no-await-in-loop
+            icons = [...icons, ...(await this.getAllIcons(`${dir}/${file}`))];
+            // eslint-disable-next-line no-continue
+            continue;
+          }
 
-            const type = `import type { FunctionalComponent, HTMLAttributes, VNodeProps } from 'vue';\ndeclare const ${icon.name}: FunctionalComponent<HTMLAttributes & VNodeProps>;\nexport default ${icon.name};\n`
-            fs.writeFile(outDir + `/${icon.name}.d.ts`, type, err => {})
-        })
+          // eslint-disable-next-line no-continue
+          if (!file.includes('.svg')) continue;
+          const prefix = dir.replace(this.path, '')
+            .split('/')
+            .map((s) => toTitle(s))
+            .join('');
 
-        const content = `${imports} \n  export {${exports}}`
-        fs.writeFile(outDir + '/index.js', content, err => {})
-        fs.writeFile(outDir + '/index.d.ts', exportTypes, err => {})
-    }
+          icons.push({
+            name: `${prefix}${file.replace('.svg', '')
+              .replace('prefix', '')
+              .split('-')
+              .map((s) => toTitle(s))
+              .join('')}`,
+            path: `${dir}/${file}`,
+          });
+        }
 
-    getAllIcons(dir) {
-        const directoryPath = path.join(__dirname, `${dir}`);
-        let icons = [] as Icon[]
-        const files = fs.readdirSync(directoryPath)
+        resolve(icons);
+      });
+    });
+  }
 
-        files.forEach((file) => {
-            if (fs.statSync(`${directoryPath}/${file}`).isDirectory()) {
-                icons = [...icons, ...this.getAllIcons(`${dir}/${file}`)]
-                return
-            }
-
-            if (!file.includes('.svg')) return;
-            const prefix = dir.replace(this.path, '').split('/').map((s) => toTitle(s)).join('')
-
-            icons.push({
-                name: `${prefix}${file.replace('.svg', '')}`,
-                path: `${dir}/${file}`
-            })
-        });
-
-        return icons
-    }
-
-    createVueIcon(icon: Icon) {
-        let content = readFileSync(path.join(__dirname, icon.path)).toString();
-
+  // eslint-disable-next-line class-methods-use-this
+  createVueIcon(icon: Icon) {
+    return new Promise((resolve) => {
+      fs.readFile(path.join(__dirname, icon.path), (err, file) => {
+        const content = file.toString();
         const result = optimize(content, {
-            multipass: true,
-            plugins: [
-                'removeDimensions'
-            ],
-        })
+          multipass: true,
+          plugins: [
+            'removeDimensions',
+          ],
+        }) as OptimizedSvg;
+
+        if (result.error) resolve('');
 
         /**
          * replace color in icons, so we can color them via css classes
+         * if not prefixed with "Color"
          */
-        const regex = /(fill|stroke|color)="([^"]*)"/gm;
-        let m;
+        if (!icon.name.startsWith('Color')) {
+          const regex = /(fill|stroke|color)="([^"]*)"/gm;
+          let m;
 
-        while ((m = regex.exec(result.data)) !== null) {
+          // eslint-disable-next-line no-cond-assign
+          while ((m = regex.exec(result.data)) !== null) {
             if (m.index === regex.lastIndex) {
-                regex.lastIndex++;
+              regex.lastIndex += 1;
             }
 
-            if (m && m[2] !== "none") {
-                result.data = result.data.replace(m[0], `${m[1]}="currentColor"`)
+            if (m && m[2] !== 'none') {
+              result.data = result.data.replace(m[0], `${m[1]}="currentColor"`);
             }
+          }
         }
 
-        let { code } = compile(result.data, {
-            mode: 'module',
-        })
+        const { code } = compile(result.data, {
+          mode: 'module',
+        });
 
-        return code.replace('export function', 'export default function')
+        resolve(code.replace('export function', 'export default function'));
+      });
+    });
+  }
+
+  createPackageInfo() {
+    const outDir = path.join(__dirname, `../out/${this.name}`);
+    if (!fs.existsSync(outDir)) {
+      fs.mkdirSync(outDir);
     }
 
-    createPackageInfo() {
-        const outDir = path.join(__dirname, `../out/${this.name}`)
-        if (!fs.existsSync(outDir)) {
-            fs.mkdirSync(outDir);
-        }
+    const info = {
+      name: this.name,
+      version: '1.0.0',
+      description: 'Generated Icon Libary.',
+      main: 'index.js',
+      exports: 'index.js',
+      license: 'MIT',
+      publishConfig: {
+        access: 'public',
+      },
+      peerDependencies: {
+        vue: '>= 3',
+      },
+    };
 
-        const info = {
-            "name": this.name,
-            "version": "1.0.0",
-            "description": "Generated Icon Libary.",
-            "main": "index.js",
-            "exports": "index.js",
-            "license": "MIT",
-            "publishConfig": {
-                "access": "public"
-            },
-            "peerDependencies": {
-                "vue": ">= 3"
-            }
-        }
-
-        fs.writeFile(outDir + '/package.json', JSON.stringify(info), err => {
-        })
-    }
+    fs.writeFile(`${outDir}/package.json`, JSON.stringify(info), () => {
+    });
+  }
 }
-
 
 /**
  * Start
  */
-const outDir = path.join(__dirname, `../out`)
+const outDir = path.join(__dirname, '../out');
 if (!fs.existsSync(outDir)) {
-    fs.mkdirSync(outDir);
+  fs.mkdirSync(outDir);
 }
 
 const readline = require('readline');
+
 const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
+  input: process.stdin,
+  output: process.stdout,
 });
 
 const processArgs = process.argv.slice(2);
 
 if (processArgs.length === 0) {
-    rl.question('Path to folder containing SVGs (default: ../svgs): ', function (path) {
-        rl.question('Enter a package name: ', function (name) {
-            const generator = new LibraryGeneration(path || '../svgs', name)
-            generator.createPackageInfo()
-            generator.create()
-            rl.close()
-        })
-    })
+  rl.question('Path to folder containing SVGs (default: ../svgs): ', (_path) => {
+    rl.question('Enter a package name: ', (_name) => {
+      const generator = new LibraryGeneration(_path || '../svgs', _name);
+      generator.createPackageInfo();
+      generator.create();
+      rl.close();
+    });
+  });
 } else {
-    const generator = new LibraryGeneration(processArgs[0], processArgs[1])
-    generator.createPackageInfo()
-    generator.create()
-    rl.close()
+  const generator = new LibraryGeneration(processArgs[0], processArgs[1]);
+  generator.createPackageInfo();
+  generator.create();
+  rl.close();
 }
-
-
